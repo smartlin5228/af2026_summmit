@@ -222,21 +222,40 @@ executors/workers, triggerer.)
 
 ### How you actually configure per-team components (Airflow 3.3 docs)
 
-**Prerequisite:** the team must exist in the DB *before* syncing bundles / starting Airflow.
+**Step 0 — create the teams in the metadata DB** (nothing works until they exist):
+```bash
+airflow teams create team_a      # also: teams list / delete / sync
+airflow teams create team_b
+```
 
-- **DAG bundle → team** (this is the binding): each bundle gets a `team_name`.
-  ```ini
-  [dag_processor]
-  dag_bundle_config_list = [
-    {"name": "team_a_dags", "classpath": "...bundles.local.LocalDagBundle",
-     "kwargs": {"path": "/opt/airflow/dags/team_a"}, "team_name": "team_a"},
-    {"name": "team_b_dags", "classpath": "...bundles.local.LocalDagBundle",
-     "kwargs": {"path": "/opt/airflow/dags/team_b"}, "team_name": "team_b"}
-  ]
-  ```
-  → the DAG processor for a team processes only that team's bundles. (So you run
-  a DAG-processor deployment per team, each with its own image/deps, pointed at
-  the team's bundle.)
+**Step 1 — bind each DAG bundle to a team** via `team_name`:
+```ini
+[dag_processor]
+dag_bundle_config_list = [
+  {"name": "team_a_dags", "classpath": "...bundles.local.LocalDagBundle",
+   "kwargs": {"path": "/opt/airflow/dags/team_a"}, "team_name": "team_a"},
+  {"name": "team_b_dags", "classpath": "...bundles.local.LocalDagBundle",
+   "kwargs": {"path": "/opt/airflow/dags/team_b"}, "team_name": "team_b"}
+]
+```
+
+**Step 2 — sync the bundle→team mapping:** `airflow teams sync`
+
+**Step 3 — run one `dag-processor` per team, scoped to that team's bundle(s):**
+```bash
+airflow dag-processor --bundle-name team_a_dags   # -B, repeatable
+airflow dag-processor --bundle-name team_b_dags
+```
+- In 3.3 the dag-processor has **no `--team-name` flag** — you scope it with
+  `-B/--bundle-name`. (The triggerer *does* have `--team-name`. AIP-67 mentions a
+  `--team-id` for the processor; not in the 3.3 stable CLI yet.)
+- Official guidance (Security Model doc): *"Deployment Managers must run separate
+  Dag File Processor and Triggerer instances per team ... configuring each
+  instance to only process bundles belonging to a specific team."*
+- Airflow does **not** spawn these — it's a deployment concern: one Deployment/
+  pod per team, own namespace/SA/secrets, own image with the team's deps.
+- Each processor writes serialized DAGs to the **shared** metadata DB; the shared
+  scheduler picks them up.
 
 - **Per-team executors** — one config line, global first:
   ```ini

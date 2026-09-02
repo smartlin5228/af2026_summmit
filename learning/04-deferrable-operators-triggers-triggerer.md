@@ -57,6 +57,51 @@ whole time, doing nothing. 500 sensors waiting = 500 slots gone.
 - `timeout` — a `timedelta`; if the trigger doesn't fire in time the task
   **fails from the triggerer** (see gotchas). Default `None` = wait forever.
 
+### What serialization is doing (and why it trips people up)
+
+**Serialization** = turning the trigger object into plain data — a string
+classpath + a kwargs dict — that can be stored as a **row in the `trigger`
+table** and rebuilt by a *different process on a different host*.
+
+Why: `execute()` runs on a **worker** and builds the trigger *in the worker's
+memory*. The trigger must run on the **triggerer** — separate process, usually a
+different pod. You can't hand a live object across that boundary, so:
+
+1. worker: `trigger.serialize()` → `("my.module.JobDoneTrigger", {"job_id": "abc"})`
+2. Airflow writes that to the DB
+3. triggerer: reads row → `import my.module; JobDoneTrigger(job_id="abc")` → runs `.run()`
+
+Same model as DAG serialization (scheduler reads JSON, never imports files):
+**Airflow 3 processes don't share memory, they share the DB.** → every `__init__`
+arg must be serializable (no live DB connections, file handles, etc.).
+
+**"Re-instantiate / start from the top" — what breaks:** `run()` is an async
+generator. If it's suspended mid-way (inside `await asyncio.sleep(30)` on poll
+#47) and its triggerer **dies / is redeployed**, that coroutine state is gone.
+Another triggerer rebuilds the object from `(classpath, kwargs)` and calls
+`run()` **from line 1** — no resume at #47.
+
+Fine if `run()` only *observes*. Breaks on **side effects**:
+
+```python
+async def run(self):
+    job_id = await self._submit_job()     # ❌ side effect
+    while True:
+        if await self._poll(job_id) == "done":
+            yield TriggerEvent({"job_id": job_id}); return
+        await asyncio.sleep(30)
+```
+Triggerer restarts after `_submit_job()` → new triggerer runs `run()` from the
+top → **submits a 2nd job**. First job orphaned, pay for both, duplicate data.
+Same for `INSERT INTO audit`, `send_slack("started")`, acquiring a lock, writing
+a file. And during a network partition a trigger can run on **two triggerers at
+once** — so even read-only-but-stateful things double up (two consumers both
+acking the same queue message).
+
+**Prevention:** `run()` answers exactly one question — "is it done yet?" —
+cheaply and repeatably. Everything with an effect goes in `execute()` (once, on a
+worker) or `execute_complete()` (once, on resume).
+
 ### The trigger class
 
 ```python
@@ -122,7 +167,19 @@ built for it.)
   default capacity **1000** (`[triggerer] default_capacity` / `--capacity`).
 - **One blocking call anywhere in any `run()` blocks the entire loop.** Every
   deferred task on that triggerer stalls. Watch `triggers.blocked_main_thread`.
-  → never do sync I/O or CPU-bound work in a trigger.
+  → never do sync I/O or CPU-bound work in a trigger. Two kinds of blocking:
+  - **Blocking I/O:** `requests.get` (→ `aiohttp`/`httpx.AsyncClient`),
+    `time.sleep` (→ `asyncio.sleep`), `psycopg2` (→ `asyncpg`), `boto3` (→
+    `aioboto3`), `open().read()` on big files, `subprocess.run`. No async lib?
+    `await asyncio.to_thread(blocking_fn, arg)`.
+  - **CPU-bound (no I/O to await):** `json.loads(huge_string)`, `re.search` on a
+    big/pathological pattern, `gzip.decompress`, `hashlib.sha256(big_bytes)`,
+    big `for` loops, pandas/numpy on a big frame, `pickle.dumps(big_obj)`.
+    Fix: do it in `execute_complete` on a worker, or `asyncio.to_thread`.
+  - Innocent-looking: `body = await resp.text()` (fine) then
+    `data = json.loads(body)` on a 5 MB body (❌ freezes every trigger for the
+    parse duration).
+  - See `05-async-vs-sync-python.md`.
 - **Triggers are serialized, not held in memory.** They live in the DB as
   `(classpath, kwargs)`. Consequences:
   - On triggerer restart / redistribution, the trigger is **re-instantiated on
@@ -163,10 +220,27 @@ not-tied-to-a-task mode.
    external job; wrong to assume it always runs. (Known bug #36090: historically
    not called on clear/fail for deferrable ops either.)
 2. **A task can be failed *from the triggerer*** — `defer(timeout=...)` expires,
-   or `run()` raises — and then it **never resumes on a worker**, so
-   `execute_complete` and `on_kill` are **skipped**. External job orphaned. Need
-   a reaper DAG or `on_task_instance_failed` listener as backstop. (See
-   `as26-taming-ai-workloads-dag-patterns.md`.)
+   or `run()` raises. What runs and what doesn't:
+
+   | Method | Where | On event fired | On user clear/fail | On timeout | On triggerer restart |
+   |---|---|---|---|---|---|
+   | `execute()` | worker | — | — | — | — |
+   | `execute_complete()` | **worker** (fresh runner) | ✅ | ❌ | ❌ | ❌ |
+   | trigger `run()` | triggerer | (yields) | cancelled | cancelled | restarts from top |
+   | trigger `cleanup()` | triggerer | ✅ | ✅ | ✅ | ✅ |
+   | trigger `on_kill()` | **triggerer** | ❌ | ✅ | ❌ | ❌ |
+   | operator `on_kill()` | worker | (only for a *running*, non-deferred task getting SIGTERM) |
+
+   - For a **deferred** task, cancellation logic is the **trigger's**
+     `on_kill()`, on the **triggerer** — the task isn't on a worker.
+   - **On timeout:** `execute_complete` skipped (your reconcile logic doesn't
+     run), `on_kill` skipped (**external job not cancelled → orphaned**),
+     `cleanup` runs but is local-only. → need a reaper DAG or
+     `on_task_instance_failed` listener as backstop.
+     (`as26-taming-ai-workloads-dag-patterns.md`.)
+   - Logs: trigger logs are forwarded into the **task-instance log** in current
+     Airflow (visible in the UI), but the triggerer process also keeps its own
+     logs — debugging a misbehaving trigger is somewhat split.
 3. **`run()` restarts from the top** on any triggerer restart → no side effects
    in the trigger.
 4. **Transient errors in the poll loop** — catch, back off, `continue`. Don't

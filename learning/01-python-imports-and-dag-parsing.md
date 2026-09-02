@@ -63,6 +63,39 @@ First hit wins. Search stops.
 
 ### Top-level code
 
+**"Module scope" / "module level" / "top-level" all mean the same thing: code
+that is NOT inside any `def` or `class` — the leftmost indentation of the file.**
+
+The rule of thumb:
+- Inside a function/method body → runs only when that function is *called*.
+- At indent 0 → runs on *import* (= every parse cycle, for a DAG file).
+
+```python
+import os                        # module level — runs on import
+DB_HOST = os.environ["DB_HOST"]  # module level — runs on import
+def my_task():                   # the `def` is module level (binds the name)...
+    r = requests.get(url)        # ...but this line is FUNCTION level —
+    return r.json()              #    runs only when my_task() is called
+```
+
+**Why do people put real operations at module level?** Almost always innocent +
+convenient, not realizing the file re-executes every ~30s:
+
+1. **Need a value before the DAG exists** — schedule/params must be known at
+   definition time, so the lookup can't be in a task:
+   `schedule = "@hourly" if Variable.get("env") == "prod" else "@daily"`.
+   The classic trap. Fix: config file / Jinja template, not a live lookup.
+2. **Dynamic DAG generation** — a loop that decides *which DAGs exist* must run
+   at parse time (that's when Airflow discovers DAGs).
+3. **"Create the client once"** — `s3 = boto3.client("s3")` at top, thinking
+   it's efficient. Runs every parse; won't survive to the task in AF3 anyway.
+4. **Imports** — `import pandas` at the top is just normal Python habit.
+5. **Credential reads** — usually a *mistake*: a snippet copied from a
+   standalone script, or `Connection.get_connection_from_secrets(...)` to build
+   a string for an operator arg. The security concern isn't malice — it's that
+   the processor *executes whatever is there*, so such code runs with the
+   processor's privileges. Per-team processor → it only sees that team's creds.
+
 A module's body runs **top to bottom, once, at first import**. At indent level 0:
 
 - `x = 1`, `def f(): ...`, `class C: ...` — definitions are cheap (they just bind

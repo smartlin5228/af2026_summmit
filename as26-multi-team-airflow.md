@@ -257,6 +257,20 @@ airflow dag-processor --bundle-name team_b_dags
 - Each processor writes serialized DAGs to the **shared** metadata DB; the shared
   scheduler picks them up.
 
+**Important: dedicated per-bundle DAG processors do NOT require multi-team.**
+- `dag-processor -B/--bundle-name` is plain Airflow 3.x (AIP-43 processor
+  separation + AIP-66 bundles). Define multiple bundles with **no `team_name`**,
+  run one dag-processor per bundle → you get code / dependency / parse-latency
+  isolation and per-pod/per-user separation.
+- **Multi-team mode adds on top:** the `team_name` binding, `airflow teams` CLI,
+  `team_id` propagation, per-team executors / pools / connections / variables /
+  secrets, and UI+RBAC filtering by team.
+- So: want "each tenant's DAGs parsed in their own process with their own deps"?
+  Stock 3.x does it. Want team-scoped RBAC + secrets + executors? That's
+  multi-team.
+- ⚠️ Bug to check: apache/airflow **#57081** — a `-B`-scoped dag-processor can
+  crash processing a **callback** that belongs to another bundle.
+
 - **Per-team executors** — one config line, global first:
   ```ini
   [core]

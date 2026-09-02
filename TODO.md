@@ -33,18 +33,25 @@ Consolidated from all session notes. Grouped by type.
 
 ### Multi-tenancy direction (biggest decision)
 
-- [ ] **Decide our isolation model.** Three references now:
-  - per-tenant instances + fleet machinery (Capital One)
-  - shared control plane + k8s-namespace "worker groups" (Datadog)
-  - native multi-team / AIP-67 (upstream, experimental)
-  - Key question from the Capital One talk: **how uniform are our tenants'
-    workloads?** Homogeneous → templated/managed model works; heterogeneous →
-    harder.
-- [ ] **If considering native multi-team (AIP-67):** scope the **Auth Manager**
-  work first — it needs per-user team membership + team-filtering hooks; not
-  just a config flag. Especially if we run a custom Auth Manager. Multi-team is
-  still experimental. Ref: `as26-multi-team-airflow.md`, memory
-  `multi-team-needs-auth-manager-work`.
+- [x] **Decision proposal written** — `platform/multi-tenancy-decision.md`.
+  Given our profile (1 shared instance, <10 teams growing slowly, very
+  heterogeneous, all 4 pains active): **Option 1 = incremental isolation on the
+  shared instance** now (per-team Pools → per-team bundles+processors → per-team
+  workers → templated provisioning), **Option 3 = native AIP-67 as the
+  destination**, Option 2 (2-3 instances by archetype) as fallback. NOT per-tenant
+  fleet.
+- [ ] **Resolve the open questions** in that doc: executor type (Celery/K8s),
+  Auth Manager (FAB/custom), DAG delivery model, secrets scoping, #57081 status,
+  what "blast radius" pain actually means for us (scheduler vs UI/RBAC).
+- [ ] **Step 1 (do this week): per-team Pools + `max_active_tasks/runs` defaults**
+  — cheapest noisy-neighbour fix.
+- [ ] **Step 2: per-team DAG bundles + dedicated DAG processors** — kills dep
+  conflicts + parse-time code-execution surface. Doesn't need multi-team.
+- [ ] **Step 3: per-team worker isolation** (K8s pod templates or Celery queues).
+- [ ] **Step 4: templated provisioning** wrapping steps 1-3 (config → bundle
+  entry + processor Deployment + worker pool + Pool + RBAC, GitOps'd).
+- [ ] **Scope the Auth Manager work for AIP-67** now (so it's ready when we want
+  the destination). Ref: memory `multi-team-needs-auth-manager-work`.
 - [ ] **Move cross-tenant `TriggerDagRunOperator` → assets.** Full recipe +
   tenant template + pre-flight checklist + rollout plan in
   `platform/cross-tenant-triggering-move-to-assets.md`. Doesn't need multi-team.

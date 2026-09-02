@@ -85,15 +85,22 @@ Consolidated from all session notes. Grouped by type.
 
 ### Observability
 
-- [ ] Evaluate enabling the **OpenLineage provider centrally** — gives every
-  tenant lineage + failure context for free; run-ID correlation helps cross-team
-  debugging (Team B failure caused by Team A's stale asset). Ref:
-  `as26-openlineage-root-cause.md`.
-- [ ] Check we have per-component metrics that distinguish scheduler-lag causes
-  (`scheduler.tasks.starving`, `pool.open_slots.*`, `executor.queued_tasks`,
-  `scheduler.scheduler_loop_duration`, `scheduler.critical_section_duration`,
-  `dag_processing.total_parse_time`, per-DAG schedule delay). Ref:
-  `as26-optimising-airflow-real-world.md` Layer 2.
+- [ ] **Enable the OpenLineage provider centrally** (staging first). Zero tenant
+  effort; auto-instruments standard operators. Gives lineage + failure context +
+  run-ID correlation → ends the workflow-owner ↔ infra ping-pong (both sides see
+  the same run record). Compounds with our existing OTel and with a future
+  ops-agent. Full proposal + rollout + cost/PII caveats:
+  `platform/observability-otel-openlineage.md`.
+- [ ] **Audit our Airflow metric coverage.** Confirm dashboards + alerts on the
+  free metrics that the Layer-2 diagnostic method needs:
+  `scheduler.tasks.starving`, `pool.open_slots.*` / `starving_tasks`,
+  `executor.queued_tasks`, `scheduler.scheduler_loop_duration`,
+  `scheduler.critical_section_duration`, `dag_processing.total_parse_time` /
+  `last_duration.<file>`, `dagrun.schedule_delay.<dag_id>`,
+  `triggers.blocked_main_thread`. Full list in
+  `platform/observability-otel-openlineage.md`.
+- [ ] Verify the OTel **trace ID** and OpenLineage **run ID** can be joined, so a
+  single run is navigable across metrics → traces → lineage.
 - [ ] Team-scoped metrics shipped in 3.3 (task durations/counts/queue-time by
   team) — useful for chargeback / noisy-tenant detection whether or not we adopt
   full multi-team.

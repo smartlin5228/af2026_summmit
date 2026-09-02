@@ -47,3 +47,10 @@ _(add during/after the talk)_
   caused by a Team A asset going stale — exactly the cross-team blind spot in
   the multi-team model.
 - Feeds the "gather + diagnose" callback pattern and any future ops agent.
+- **We already run OTel (metrics + traces) on Airflow 3.** OTel = "is something
+  wrong / where did the wall-clock go". OpenLineage = "**why** did this run
+  behave differently" (what data, which query, row counts, upstream freshness).
+  The three layers together end the workflow-owner ↔ infra ping-pong: both teams
+  (or an agent) look at the *same* run record.
+- Full proposal + the free-metrics audit list:
+  `platform/observability-otel-openlineage.md`.

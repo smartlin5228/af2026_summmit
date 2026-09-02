@@ -113,18 +113,24 @@ Consolidated from all session notes. Grouped by type.
 
 ### Durability / long-running tasks (AIP-103 / 105, 3.3)
 
-- [ ] Evaluate **`ResumableJobMixin`** for our Spark/long-job operators — kills
-  the "crash tax" (worker dies → resubmit whole job). Needs **cluster deploy
-  mode**. Ref: `as26-resumable-task-execution-spark.md`.
+- [ ] ~~`ResumableJobMixin` for Spark~~ — **N/A, we have no Spark jobs.** (The
+  resumable-Spark session was attended out of curiosity.) Revisit only if we
+  ever add Spark.
+- [ ] Keep **AIP-103 task state store** on the radar for *any* future
+  long-running / batch / agentic task — the "resume from checkpoint" primitive is
+  workload-agnostic. Ref: `as26-resumable-task-execution-spark.md` (mechanism
+  section), `as26-agentic-pipelines-on-airflow.md`.
 - [ ] Evaluate **pluggable retry policies** (`ExceptionRetryPolicy` to start —
   fail-fast on auth/config errors, backoff on transient) for tenant DAGs or as a
-  platform default.
-- [ ] For any deferrable operators watching external jobs: audit the
-  **triggerer-timeout / trigger-exception path** — task failed from the
-  triggerer skips `execute_complete` and `on_kill`, orphaning the external job.
-  Add a reaper/reconcile DAG or `on_task_instance_failed` listener. Check
-  apache/airflow **#36090** (deferrable `on_kill` not called) status for our
-  version. Ref: `as26-taming-ai-workloads-dag-patterns.md`.
+  platform default. Broadly useful, not Spark-specific.
+- [ ] **Only if we run deferrable operators watching external jobs** (Trino, K8s
+  jobs, HTTP sensors, custom): audit the **triggerer-timeout / trigger-exception
+  path** — task failed from the triggerer skips `execute_complete` and
+  `on_kill`, orphaning the external job. Add a reaper/reconcile DAG or
+  `on_task_instance_failed` listener. Check apache/airflow **#36090** status for
+  our version. Ref: `as26-taming-ai-workloads-dag-patterns.md`,
+  `learning/04-deferrable-operators-triggers-triggerer.md`.
+  - First: do we even use deferrable operators today? If not, this is deferred.
 
 ### Agentic (if/when tenants want LLM pipelines)
 

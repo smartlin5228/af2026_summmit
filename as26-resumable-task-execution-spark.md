@@ -5,6 +5,11 @@
 > Related: `as26-agentic-pipelines-on-airflow.md` (AIP-103 / AIP-105 from the
 > agentic angle) and `as26-taming-ai-workloads-dag-patterns.md` (deferrable
 > watcher pattern — the *async* alternative this talk says you can avoid).
+>
+> **For us:** we have **no Spark jobs** — attended out of curiosity. Value to keep:
+> the **AIP-103 task-state-store primitive is workload-agnostic** ("resume from
+> checkpoint" for any long/batch/agentic task), and **AIP-105 pluggable retry
+> policies** are broadly useful. The Spark-specific `ResumableJobMixin` is N/A.
 
 ## Session summary
 

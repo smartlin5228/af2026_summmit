@@ -45,6 +45,10 @@ Consolidated from all session notes. Grouped by type.
   just a config flag. Especially if we run a custom Auth Manager. Multi-team is
   still experimental. Ref: `as26-multi-team-airflow.md`, memory
   `multi-team-needs-auth-manager-work`.
+- [ ] **Move cross-tenant `TriggerDagRunOperator` → assets.** Full recipe +
+  tenant template + pre-flight checklist + rollout plan in
+  `platform/cross-tenant-triggering-move-to-assets.md`. Doesn't need multi-team.
+  Start: grep DAG repos for `TriggerDagRunOperator`, migrate clean pairs first.
 - [ ] **Trigger queues** (`--queues` on triggerer, PR #59239) — evaluate now
   regardless of multi-tenancy model. Even single-tenant benefit: isolate
   slow/blocking triggers (Spark/Trino polls) from latency-sensitive ones. Route

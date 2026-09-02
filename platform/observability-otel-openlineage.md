@@ -149,6 +149,36 @@ and several hours.
 Without OpenLineage the agent is guessing from logs. With it, the agent has
 structured, queryable ground truth.
 
+### Prior art: Astronomer's "Otto" — and our build-vs-buy question
+
+Astronomer ships **Otto**, a data-engineering agent for Airflow. It's the
+productized version of exactly this idea: it sits on top of **OpenLineage +
+OTel + machine-level metrics + Airflow context** (DAG code, run history, task
+logs, connections) and does DAG authoring, debugging, and upgrade planning. On
+Astro, the OpenLineage provider is pre-installed and Observe/Alerts require it —
+i.e. Astronomer treats OL as the mandatory substrate for the agent.
+
+**Our angle:** our company already has an internal AI agent with access to all
+three signal sources (we run OTel; we'd be adding OL; machine/host metrics
+exist). So the question isn't "should we buy Otto" — it's **"can we point our
+existing agent at the same substrate and get the same investigation capability
+in-house?"**
+
+- **In favour of build:** we already have the agent + the data; OL/OTel are open
+  standards, not Astro-proprietary; keeps tenant data in-house; we control the
+  prompt/skills for *our* platform's failure modes.
+- **What to investigate:**
+  - Can our agent query the OL event store (or Marquez API) + the OTel
+    metrics/traces backend + host metrics in one session?
+  - A "skill" / runbook: given a failed task instance → pull OL run facet →
+    check upstream OL runs for staleness → overlay OTel for the window →
+    classify (DAG bug / stale upstream / platform degradation).
+  - What Otto does that's hard to replicate (learned conventions per env,
+    tight Astro IDE integration) vs. what's just "agent + the three signals."
+- **Deliverable:** a spike — wire our agent to a staging OL collector + our OTel
+  backend, try "explain this failed task" on 10 real past incidents, compare to
+  what the two teams concluded manually.
+
 ---
 
 ## Rollout proposal

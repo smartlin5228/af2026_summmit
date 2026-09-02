@@ -101,6 +101,12 @@ Consolidated from all session notes. Grouped by type.
   `platform/observability-otel-openlineage.md`.
 - [ ] Verify the OTel **trace ID** and OpenLineage **run ID** can be joined, so a
   single run is navigable across metrics → traces → lineage.
+- [ ] **Build-vs-buy spike: our own "Otto".** Astronomer's Otto = agent over
+  OL + OTel + host metrics + Airflow context. We already have an internal agent
+  with access to all three. Spike: wire our agent to a staging OL collector +
+  our OTel backend, run "explain this failed task" on ~10 real past incidents,
+  compare to what the owner/infra teams concluded manually. Ref:
+  `platform/observability-otel-openlineage.md` (Otto section).
 - [ ] Team-scoped metrics shipped in 3.3 (task durations/counts/queue-time by
   team) — useful for chargeback / noisy-tenant detection whether or not we adopt
   full multi-team.
